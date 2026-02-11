@@ -15,7 +15,7 @@ Desarrollado por devrex.
 - Personalidad configurable por modelo
 - Voz automática según género
 - Audio 3D sincronizado con el ped
-- Texto 3D sobre el NPC mientras habla
+- Texto 3D sobre el NPC mientras habla + animacion
 - Estados sincronizados (`isThinking`, `isSpeaking`)
 - Compatible con ESX, QBCore y standalone
 - Optimizado para servidores Roleplay
@@ -31,7 +31,7 @@ Debes tener instalados:
 - ox_lib (TextUI e inputDialog)  
   https://github.com/overextended/ox_lib
 
-- sounity (audio 3D)
+- xsound (audio 3D)
 
 - cd_easytime (hora y clima dinámicamente)
 
