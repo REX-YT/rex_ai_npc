@@ -66,9 +66,9 @@ Citizen.CreateThread(function()
             if not lastTargetedPed then
                 lastTargetedPed = targetedPed
 
-                ClearPedTasks(targetedPed)
-                TaskTurnPedToFaceEntity(targetedPed, PlayerPedId(), 1000)
-                FreezeEntityPosition(targetedPed, true)
+            SetBlockingOfNonTemporaryEvents(targetedPed, true)
+            TaskTurnPedToFaceEntity(targetedPed, PlayerPedId(), -1)
+            TaskStandStill(targetedPed, -1)
 
                 if not textUIOpen then
                     textUIOpen = true
@@ -205,7 +205,8 @@ end
 
 function handleDetarget()
     if DoesEntityExist(lastTargetedPed) then
-        FreezeEntityPosition(lastTargetedPed, false)
+        SetBlockingOfNonTemporaryEvents(lastTargetedPed, false)
+        ClearPedTasks(lastTargetedPed)
         TaskWanderStandard(lastTargetedPed, 10.0, 10)
     end
 
