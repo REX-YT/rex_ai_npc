@@ -73,15 +73,22 @@ end
       Citizen.Wait(1)
     end
 
-    local soundId = exports.sounity:CreateSound(ttsUrl)
+local soundName = "ped_tts_" .. pedId
 
-    exports.sounity:AttachSound(soundId, pedId)
-    exports.sounity:StartSound(soundId)
+local entity = NetworkGetEntityFromNetworkId(pedId)
+local coords = GetEntityCoords(entity)
+
+exports.xsound:PlayUrlPos(-1, soundName, ttsUrl, 0.5, coords, false)
+exports.xsound:Distance(-1, soundName, Config.RangoVoz) 
+exports.xsound:setSoundDynamic(-1, soundName, true)
+exports.xsound:destroyOnFinish(-1, soundName, true)
 
     Entity(NetworkGetEntityFromNetworkId(pedId)).state:set('isThinking', false, true)
     Entity(NetworkGetEntityFromNetworkId(pedId)).state:set('isSpeaking', true, true)
 
-Citizen.SetTimeout(5000, function()
+  local duration = math.max(4000, math.min(15000, string.len(response) * 55))
+
+Citizen.SetTimeout(duration, function()
     local entity = NetworkGetEntityFromNetworkId(pedId)
     if entity and entity ~= 0 then
         Entity(entity).state:set('isSpeaking', false, true)

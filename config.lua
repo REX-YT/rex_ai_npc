@@ -10,6 +10,8 @@ Config.Voices       = {
   Female = "Lucía"
 }
 
+Config.RangoVoz = 4.0
+
 Config.SystemPrompt = [[
 Eres un ciudadano normal que vive en el mundo de Grand Theft Auto V.
 Estás teniendo una conversación con otra persona dentro del juego.

@@ -96,8 +96,13 @@ Citizen.CreateThread(function()
 end)
 
 
--- Texto arriba
+-- Texto arriba con animacion
 Citizen.CreateThread(function()
+    RequestAnimDict("facials@gen_male@variations@normal")
+    while not HasAnimDictLoaded("facials@gen_male@variations@normal") do
+        Citizen.Wait(0)
+    end
+
     while true do
         Citizen.Wait(0)
 
@@ -105,10 +110,34 @@ Citizen.CreateThread(function()
             if DoesEntityExist(ped) then
                 local state = Entity(ped).state
                 local speech = state.lastSpeech
+                local netId = NetworkGetNetworkIdFromEntity(ped)
+                local soundName = "ped_tts_" .. netId
 
-                if speech and speech ~= "" then
-                    local coords = GetEntityCoords(ped)
-                    DrawText3D(coords.x, coords.y, coords.z + 1.0, speech)
+                if state.isSpeaking then
+
+                    -- Animación
+                    if not IsEntityPlayingAnim(ped, "facials@gen_male@variations@normal", "talk_01", 3) then
+                        TaskPlayAnim(ped,
+                            "facials@gen_male@variations@normal",
+                            "talk_01",
+                            8.0, -8.0, -1, 49, 0, false, false, false
+                        )
+                    end
+
+                    -- Texto
+                    if speech and speech ~= "" then
+                        local coords = GetEntityCoords(ped)
+                        DrawText3D(coords.x, coords.y, coords.z + 1.0, speech)
+                    end
+
+                    -- ACTUALIZAR POSICIÓN DEL SONIDO
+                    if exports.xsound:soundExists(soundName) then
+                        local coords = GetEntityCoords(ped)
+                        exports.xsound:Position(soundName, coords)
+                    end
+
+                else
+                    ClearPedSecondaryTask(ped)
                 end
             end
         end
@@ -120,20 +149,32 @@ end)
 
 function DrawText3D(x, y, z, text)
     local onScreen, _x, _y = World3dToScreen2d(x, y, z)
-    local px, py, pz = table.unpack(GetGameplayCamCoords())
+    if not onScreen then return end
 
-    SetTextScale(0.35, 0.35)
+    local camCoords = GetGameplayCamCoords()
+    local dist = #(vector3(x,y,z) - camCoords)
+
+    local scale = (1 / dist) * 2
+    local fov = (1 / GetGameplayCamFov()) * 100
+    scale = scale * fov
+
+    SetTextScale(0.0 * scale, 0.45 * scale)
     SetTextFont(4)
     SetTextProportional(1)
     SetTextColour(255, 255, 255, 215)
+    SetTextCentre(true)
     SetTextEntry("STRING")
-    SetTextCentre(1)
+
+    -- Wrap automático
+    SetTextWrap(0.0, 1.0)
+
     AddTextComponentString(text)
     DrawText(_x, _y)
 
-    local factor = (string.len(text)) / 370
-    DrawRect(_x, _y + 0.0125, 0.015 + factor, 0.03, 0, 0, 0, 100)
+    local factor = string.len(text) / 400
+    DrawRect(_x, _y + 0.0125, 0.02 + factor, 0.035 + (factor * 0.5), 0, 0, 0, 120)
 end
+
 
 
 function openInputDialog()

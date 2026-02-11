@@ -7,7 +7,7 @@ version '1.0.0'
 
 dependencies {
     'ox_lib',
-    'sounity'
+    'xsound'
 }
 
 
