@@ -6,7 +6,6 @@ local lastTargetedPed = nil
 
 local textUIOpen = false
 local uiBusy = false
-local currentPed = nil
 
 -- Threads
 
@@ -25,96 +24,77 @@ Citizen.CreateThread(function()
   end
 end)
 
-
 Citizen.CreateThread(function()
-  while true do
-    Citizen.Wait(0)
+    while true do
+        Citizen.Wait(0)
 
-    local playerPed = PlayerPedId()
-    local playerCoords = GetEntityCoords(playerPed)
-    local hit, entityHit, endCoords = raycastFromCamera(8)
+        local playerPed = PlayerPedId()
+        local playerCoords = GetEntityCoords(playerPed)
+        local hit, entityHit, endCoords = raycastFromCamera(8)
 
-    if hit == 1 then
-      local distance = #(playerCoords - endCoords)
-      local pedModel = tostring(GetEntityModel(entityHit))
+        targetedPed = nil
 
-      if distance < 3.0 and humanPeds[pedModel] then
+        if hit == 1 
+            and DoesEntityExist(entityHit) 
+            and IsEntityAPed(entityHit) 
+            and not IsPedAPlayer(entityHit) 
+            and not IsPedDeadOrDying(entityHit, true) then
 
-        -- Mostrar TextUI solo una vez
-        if not textUIOpen then
-          textUIOpen = true
-          lib.showTextUI('[L] - Hablar', {
-            position = 'right-center',
-            icon = 'comments',
-            iconColor = '#00ff88'
-          })
+            local distance = #(playerCoords - endCoords)
+            local pedModel = tostring(GetEntityModel(entityHit))
+
+            if distance < 3.0 and humanPeds[pedModel] then
+                targetedPed = entityHit
+            end
         end
-
-        -- Presiona L para hablar
-if IsControlJustPressed(0, 182) and not uiBusy then
-    uiBusy = true
-    currentPed = entityHit
-
-    ClearPedTasksImmediately(currentPed)
-    TaskTurnPedToFaceEntity(currentPed, PlayerPedId(), 1000)
-    FreezeEntityPosition(currentPed, true)
-
-    openInputDialog()
-end
-
-
-      else
-        if textUIOpen then
-          textUIOpen = false
-          lib.hideTextUI()
-        end
-      end
-    else
-      if textUIOpen then
-        textUIOpen = false
-        lib.hideTextUI()
-      end
     end
-  end
 end)
 
 Citizen.CreateThread(function()
-  while true do
-    Citizen.Wait(0)
+    while true do
+        Citizen.Wait(0)
 
-    if not targeting then
-      if lastTargetedPed then
-        handleDetarget()
-      end
+        -- Si estamos mirando un ped válido
+        if targetedPed then
 
-      goto continue
+            -- Cambiamos de ped
+            if lastTargetedPed and lastTargetedPed ~= targetedPed then
+                handleDetarget()
+            end
+
+            -- Primer targeting
+            if not lastTargetedPed then
+                lastTargetedPed = targetedPed
+
+                ClearPedTasks(targetedPed)
+                TaskTurnPedToFaceEntity(targetedPed, PlayerPedId(), 1000)
+                FreezeEntityPosition(targetedPed, true)
+
+                if not textUIOpen then
+                    textUIOpen = true
+                    lib.showTextUI('[L] - Hablar', {
+                        position = 'right-center',
+                        icon = 'comments',
+                        iconColor = '#00ff88'
+                    })
+                end
+            end
+
+            -- Pulsar L
+            if IsControlJustPressed(0, 182) and not uiBusy then
+                uiBusy = true
+                openInputDialog()
+            end
+
+        else
+            -- No estamos mirando nada válido
+            if lastTargetedPed then
+                handleDetarget()
+            end
+        end
     end
-
-    if targeting then
-      if lastTargetedPed and lastTargetedPed ~= targetedPed then
-        handleDetarget()
-      end
-
-      if not lastTargetedPed then
-        lastTargetedPed = targetedPed
-
-        LocalPlayer.state:set('targetedPed', NetworkGetNetworkIdFromEntity(targetedPed), true)
-
-        ClearPedTasksImmediately(targetedPed)
-
-        TaskTurnPedToFaceEntity(targetedPed, PlayerPedId(), 1000)
-
-        Citizen.Wait(1000)
-
-        FreezeEntityPosition(targetedPed, true)
-      end
-
-      TaskStandStill(targetedPed, 1000)
-    end
-
-    ::continue::
-  end
 end)
+
 
 -- Texto arriba
 Citizen.CreateThread(function()
@@ -157,52 +137,45 @@ end
 
 
 function openInputDialog()
-  local input = lib.inputDialog('Hablar con el ciudadano', {
-    {
-      type = 'textarea',
-      label = 'Mensaje',
-      placeholder = 'Escribe lo que quieres decir...',
-      required = true,
-      min = 3,
-      max = 6,
-      autosize = true
-    }
-  })
+    local input = lib.inputDialog('Hablar con el ciudadano', {
+        {
+            type = 'textarea',
+            label = 'Mensaje',
+            placeholder = 'Escribe lo que quieres decir...',
+            required = true,
+            min = 3,
+            max = 200,
+            autosize = true
+        }
+    })
 
-  if not input then
-      if currentPed then
-          FreezeEntityPosition(currentPed, false)
-      end
-      uiBusy = false
-      return
-  end
+    if input and lastTargetedPed then
+        TriggerServerEvent(
+            "ai_ped:talk",
+            NetworkGetNetworkIdFromEntity(lastTargetedPed),
+            tostring(GetEntityModel(lastTargetedPed)),
+            input[1]
+        )
+    end
 
-  if currentPed then
-    TriggerServerEvent(
-      "ai_ped:talk",
-      NetworkGetNetworkIdFromEntity(currentPed),
-      tostring(GetEntityModel(currentPed)),
-      input[1]
-    )
-
-    FreezeEntityPosition(currentPed, false)
-  end
-
-  uiBusy = false
+    uiBusy = false
 end
-
 
 
 function handleDetarget()
-  if DoesEntityExist(lastTargetedPed) then
-    FreezeEntityPosition(lastTargetedPed, false)
-    TaskWanderStandard(lastTargetedPed, 10.0, 10)
-  end
+    if DoesEntityExist(lastTargetedPed) then
+        FreezeEntityPosition(lastTargetedPed, false)
+        TaskWanderStandard(lastTargetedPed, 10.0, 10)
+    end
 
-  LocalPlayer.state:set('targetedPed', nil, true)
+    if textUIOpen then
+        textUIOpen = false
+        lib.hideTextUI()
+    end
 
-  lastTargetedPed = nil
+    lastTargetedPed = nil
 end
+
 
 function raycastFromCamera(flag)
   local coords, normal = GetWorldCoordFromScreenCoord(0.5, 0.5)
