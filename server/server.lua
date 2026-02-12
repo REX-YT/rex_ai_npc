@@ -40,7 +40,12 @@ function generateResponse(playerId, pedNetId, pedModel, message)
             end
 
             local ttsJson = json.decode(ttsData)
-            local ttsUrl = ttsJson?.SynthesisTask?.OutputUri
+            local ttsUrl = nil
+
+			if ttsJson and ttsJson.SynthesisTask and ttsJson.SynthesisTask.OutputUri then
+    		ttsUrl = ttsJson.SynthesisTask.OutputUri
+			end
+
 
             if not ttsUrl then
                 Entity(entity).state:set('isThinking', false, true)
@@ -55,10 +60,9 @@ function generateResponse(playerId, pedNetId, pedModel, message)
             local coords = GetEntityCoords(entity)
             local soundName = "ped_tts_" .. pedNetId
 
-            exports.xsound:PlayUrlPos(-1, soundName, ttsUrl, 0.5, coords, false)
-            exports.xsound:Distance(-1, soundName, Config.RangoVoz)
-            exports.xsound:setSoundDynamic(-1, soundName, true)
-            exports.xsound:destroyOnFinish(-1, soundName, true)
+            exports.xsound:PlayUrlPos(soundName, ttsUrl, Config.volume, coords, false)
+            exports.xsound:Distance(soundName, Config.RangoVoz)
+            exports.xsound:destroyOnFinish(soundName, true)
 
             local duration = math.max(4000, math.min(15000, string.len(response) * 55))
 

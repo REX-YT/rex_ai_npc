@@ -68,12 +68,15 @@ Citizen.CreateThread(function()
             if not lastTargetedPed then
                 lastTargetedPed = targetedPed
 
-                ClearPedTasks(targetedPed)
-                SetBlockingOfNonTemporaryEvents(targetedPed, true)
+ClearPedTasksImmediately(targetedPed)
 
-                TaskTurnPedToFaceEntity(targetedPed, PlayerPedId(), 2000)
-                TaskLookAtEntity(targetedPed, PlayerPedId(), 2000, 2048, 3)
-                TaskStandStill(targetedPed, -1)
+SetEntityAsMissionEntity(targetedPed, true, true)
+SetBlockingOfNonTemporaryEvents(targetedPed, true)
+FreezeEntityPosition(targetedPed, true)
+
+TaskTurnPedToFaceEntity(targetedPed, PlayerPedId(), -1)
+TaskLookAtEntity(targetedPed, PlayerPedId(), -1, 2048, 3)
+
 
 
                 if not textUIOpen then
@@ -106,14 +109,22 @@ AddStateBagChangeHandler('isSpeaking', nil, function(bagName, key, value)
     local entity = GetEntityFromStateBagName(bagName)
     if not entity or entity == 0 then return end
 
+    local netId = NetworkGetNetworkIdFromEntity(entity)
+
     if value then
         activeTalkingPeds[entity] = true
     else
         activeTalkingPeds[entity] = nil
         ClearPedTasks(entity)
         ClearPedSecondaryTask(entity)
+
+        SendNUIMessage({
+            type = "removeSpeech",
+            netId = netId
+        })
     end
 end)
+
 
 -- Cargar anim dict correctamente
 Citizen.CreateThread(function()
@@ -153,18 +164,46 @@ Citizen.CreateThread(function()
                 end
 
                 -- TEXTO 3D
-                if state.lastSpeech and state.lastSpeech ~= "" then
-                    DrawText3D(coords.x, coords.y, coords.z + 1.0, state.lastSpeech)
-                end
+local netId = NetworkGetNetworkIdFromEntity(ped)
+
+if state.lastSpeech and state.lastSpeech ~= "" then
+
+    local onScreen, screenX, screenY = World3dToScreen2d(coords.x, coords.y, coords.z + 1.0)
+
+    if onScreen then
+        SendNUIMessage({
+            type = "updateSpeech",
+            netId = netId,
+            text = state.lastSpeech,
+            x = screenX,
+            y = screenY,
+            visible = true
+        })
+    else
+        SendNUIMessage({
+            type = "updateSpeech",
+            netId = netId,
+            visible = false
+        })
+    end
+                        end
 
                 -- ACTUALIZAR POSICIÓN DEL SONIDO
-                local netId = NetworkGetNetworkIdFromEntity(ped)
-                if netId and netId ~= 0 then
-                    local soundName = "ped_tts_" .. netId
-                    if exports.xsound:soundExists(soundName) then
-                        exports.xsound:Position(-1, soundName, coords)
-                    end
-                end
+if netId and netId ~= 0 then
+    local soundName = "ped_tts_" .. netId
+
+    if exports.xsound and exports.xsound:soundExists(soundName) then
+        local success = pcall(function()
+            exports.xsound:Position(soundName, coords)
+        end)
+
+        if not success then
+            -- opcional: limpiar ped roto
+            activeTalkingPeds[ped] = nil
+        end
+    end
+end
+
 
             else
                 activeTalkingPeds[ped] = nil
@@ -176,36 +215,6 @@ end)
 
 
 -- Functions
-
-function DrawText3D(x, y, z, text)
-    local onScreen, _x, _y = World3dToScreen2d(x, y, z)
-    if not onScreen then return end
-
-    local camCoords = GetGameplayCamCoords()
-    local dist = #(vector3(x,y,z) - camCoords)
-
-    local scale = (1 / dist) * 2
-    local fov = (1 / GetGameplayCamFov()) * 100
-    scale = scale * fov
-
-    SetTextScale(0.0 * scale, 0.45 * scale)
-    SetTextFont(4)
-    SetTextProportional(1)
-    SetTextColour(255, 255, 255, 215)
-    SetTextCentre(true)
-    SetTextEntry("STRING")
-
-    -- Wrap automático
-    SetTextWrap(0.0, 1.0)
-
-    AddTextComponentString(text)
-    DrawText(_x, _y)
-
-    local factor = string.len(text) / 400
-    DrawRect(_x, _y + 0.0125, 0.02 + factor, 0.035 + (factor * 0.5), 0, 0, 0, 120)
-end
-
-
 
 function openInputDialog()
     local input = lib.inputDialog('Hablar con el ciudadano', {
@@ -235,9 +244,10 @@ end
 
 function handleDetarget()
     if DoesEntityExist(lastTargetedPed) then
-    SetBlockingOfNonTemporaryEvents(lastTargetedPed, false)
-    ClearPedTasks(lastTargetedPed)
-    TaskWanderStandard(lastTargetedPed, 10.0, 10)
+        FreezeEntityPosition(lastTargetedPed, false)
+        SetBlockingOfNonTemporaryEvents(lastTargetedPed, false)
+        ClearPedTasksImmediately(lastTargetedPed)
+        TaskWanderStandard(lastTargetedPed, 10.0, 10)
     end
 
     if textUIOpen then
