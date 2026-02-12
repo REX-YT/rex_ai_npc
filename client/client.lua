@@ -7,6 +7,8 @@ local lastTargetedPed = nil
 local textUIOpen = false
 local uiBusy = false
 
+local activeTalkingPeds = {}
+
 -- Threads
 
 Citizen.CreateThread(function()
@@ -66,9 +68,13 @@ Citizen.CreateThread(function()
             if not lastTargetedPed then
                 lastTargetedPed = targetedPed
 
-            SetBlockingOfNonTemporaryEvents(targetedPed, true)
-            TaskTurnPedToFaceEntity(targetedPed, PlayerPedId(), -1)
-            TaskStandStill(targetedPed, -1)
+                ClearPedTasks(targetedPed)
+                SetBlockingOfNonTemporaryEvents(targetedPed, true)
+
+                TaskTurnPedToFaceEntity(targetedPed, PlayerPedId(), 2000)
+                TaskLookAtEntity(targetedPed, PlayerPedId(), 2000, 2048, 3)
+                TaskStandStill(targetedPed, -1)
+
 
                 if not textUIOpen then
                     textUIOpen = true
@@ -95,54 +101,78 @@ Citizen.CreateThread(function()
     end
 end)
 
+-- Detectar cambios de estado sincronizado
+AddStateBagChangeHandler('isSpeaking', nil, function(bagName, key, value)
+    local entity = GetEntityFromStateBagName(bagName)
+    if not entity or entity == 0 then return end
 
--- Texto arriba con animacion
+    if value then
+        activeTalkingPeds[entity] = true
+    else
+        activeTalkingPeds[entity] = nil
+        ClearPedTasks(entity)
+        ClearPedSecondaryTask(entity)
+    end
+end)
+
+-- Cargar anim dict correctamente
 Citizen.CreateThread(function()
     RequestAnimDict("facials@gen_male@variations@normal")
     while not HasAnimDictLoaded("facials@gen_male@variations@normal") do
-        Citizen.Wait(0)
+        Citizen.Wait(100)
     end
+end)
 
+-- LOOP ULTRA LIVIANO
+Citizen.CreateThread(function()
     while true do
         Citizen.Wait(0)
 
-        for _, ped in ipairs(GetGamePool("CPed")) do
+        for ped,_ in pairs(activeTalkingPeds) do
             if DoesEntityExist(ped) then
+
                 local state = Entity(ped).state
-                local speech = state.lastSpeech
-                local netId = NetworkGetNetworkIdFromEntity(ped)
-                local soundName = "ped_tts_" .. netId
+                local coords = GetEntityCoords(ped)
+                local playerPed = PlayerPedId()
 
-                if state.isSpeaking then
+                -- HACER QUE MIRE AL JUGADOR SIEMPRE
+                TaskLookAtEntity(ped, playerPed, 1000, 2048, 3)
 
-                    -- Animación
-                    if not IsEntityPlayingAnim(ped, "facials@gen_male@variations@normal", "talk_01", 3) then
-                        TaskPlayAnim(ped,
-                            "facials@gen_male@variations@normal",
-                            "talk_01",
-                            8.0, -8.0, -1, 49, 0, false, false, false
-                        )
-                    end
-
-                    -- Texto
-                    if speech and speech ~= "" then
-                        local coords = GetEntityCoords(ped)
-                        DrawText3D(coords.x, coords.y, coords.z + 1.0, speech)
-                    end
-
-                    -- ACTUALIZAR POSICIÓN DEL SONIDO
-                    if exports.xsound:soundExists(soundName) then
-                        local coords = GetEntityCoords(ped)
-                        exports.xsound:Position(soundName, coords)
-                    end
-
-                else
-                    ClearPedSecondaryTask(ped)
+                -- ANIMACIÓN FACIAL REAL
+                if not IsEntityPlayingAnim(ped, "facials@gen_male@variations@normal", "talk_01", 3) then
+                    TaskPlayAnim(
+                        ped,
+                        "facials@gen_male@variations@normal",
+                        "talk_01",
+                        8.0, -8.0,
+                        -1,
+                        49,
+                        0,
+                        false, false, false
+                    )
                 end
+
+                -- TEXTO 3D
+                if state.lastSpeech and state.lastSpeech ~= "" then
+                    DrawText3D(coords.x, coords.y, coords.z + 1.0, state.lastSpeech)
+                end
+
+                -- ACTUALIZAR POSICIÓN DEL SONIDO
+                local netId = NetworkGetNetworkIdFromEntity(ped)
+                if netId and netId ~= 0 then
+                    local soundName = "ped_tts_" .. netId
+                    if exports.xsound:soundExists(soundName) then
+                        exports.xsound:Position(-1, soundName, coords)
+                    end
+                end
+
+            else
+                activeTalkingPeds[ped] = nil
             end
         end
     end
 end)
+
 
 
 -- Functions
@@ -192,7 +222,7 @@ function openInputDialog()
 
     if input and lastTargetedPed then
         TriggerServerEvent(
-            "ai_ped:talk",
+            "rex_ia_npc:talk",
             NetworkGetNetworkIdFromEntity(lastTargetedPed),
             tostring(GetEntityModel(lastTargetedPed)),
             input[1]
@@ -205,9 +235,9 @@ end
 
 function handleDetarget()
     if DoesEntityExist(lastTargetedPed) then
-        SetBlockingOfNonTemporaryEvents(lastTargetedPed, false)
-        ClearPedTasks(lastTargetedPed)
-        TaskWanderStandard(lastTargetedPed, 10.0, 10)
+    SetBlockingOfNonTemporaryEvents(lastTargetedPed, false)
+    ClearPedTasks(lastTargetedPed)
+    TaskWanderStandard(lastTargetedPed, 10.0, 10)
     end
 
     if textUIOpen then

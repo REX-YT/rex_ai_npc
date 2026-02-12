@@ -3,107 +3,92 @@ local conversations = {}
 
 -- Functions
 
-function generateResponse(playerId, pedId, pedModel, message)
-  table.insert(conversations[playerId][pedId], {
-    role    = 'user',
-    content = message
-  })
+function generateResponse(playerId, pedNetId, pedModel, message)
 
-  PerformHttpRequest('https://api.openai.com/v1/chat/completions', function(code, data, headers)
-    if code ~= 200 then
-      Entity(NetworkGetEntityFromNetworkId(pedId)).state:set('isThinking', false, true)
-    end
-
-    local _data = json.decode(data)
-    local response = _data.choices[1].message.content
-
-    table.insert(conversations[playerId][pedId], {
-      role = 'assistant',
-      content = response
-    })
-            
-            local entity = NetworkGetEntityFromNetworkId(pedId)
-if entity and entity ~= 0 then
-    Entity(entity).state:set('lastSpeech', response, true)
-end
-
-    local ttsUrl = nil
-
-    PerformHttpRequest('https://api.v8.unrealspeech.com/synthesisTasks', function(code, data, headers)   
-
-       if code ~= 200 or not data then
-        Entity(NetworkGetEntityFromNetworkId(pedId)).state:set('isThinking', false, true)
-        return
-    end
-
-    local __data = json.decode(data)
-
-    if not __data or not __data.SynthesisTask or not __data.SynthesisTask.OutputUri then
-        print("TTS INVALID JSON:", data)
-        Entity(NetworkGetEntityFromNetworkId(pedId)).state:set('isThinking', false, true)
-        return
-    end
-                    
-      ttsUrl = __data.SynthesisTask.OutputUri
-    end, 'POST', json.encode({
-      Text = response,
-      VoiceId = Config.Voices[humanPeds[pedModel].gender],
-      Bitrate = "192k",
-      Speed = "0",
-      Pitch = "1",
-      TimestampType = "sentence",
-    }), {
-      ['Content-Type'] = 'application/json',
-      ['Authorization'] = ('Bearer %s'):format(Config.TTSAPIKey),
+    table.insert(conversations[playerId][pedNetId], {
+        role = 'user',
+        content = message
     })
 
+    PerformHttpRequest('https://api.openai.com/v1/chat/completions', function(code, data)
 
-    if not ttsUrl then
-      Entity(NetworkGetEntityFromNetworkId(pedId)).state:set('isThinking', false, true)
-    end
-
-    local soundReady = false
-
-    while not soundReady do
-      PerformHttpRequest(ttsUrl, function(code)
-        if code == 200 then
-          soundReady = true
+        if code ~= 200 or not data then
+            local entity = NetworkGetEntityFromNetworkId(pedNetId)
+            if entity and entity ~= 0 then
+                Entity(entity).state:set('isThinking', false, true)
+            end
+            return
         end
-      end, 'GET', nil, {})
-      Citizen.Wait(1)
-    end
 
-local soundName = "ped_tts_" .. pedId
+        local _data = json.decode(data)
+        local response = _data.choices[1].message.content
 
-local entity = NetworkGetEntityFromNetworkId(pedId)
-local coords = GetEntityCoords(entity)
+        table.insert(conversations[playerId][pedNetId], {
+            role = 'assistant',
+            content = response
+        })
 
-exports.xsound:PlayUrlPos(-1, soundName, ttsUrl, 0.5, coords, false)
-exports.xsound:Distance(-1, soundName, Config.RangoVoz) 
-exports.xsound:setSoundDynamic(-1, soundName, true)
-exports.xsound:destroyOnFinish(-1, soundName, true)
+        -- TTS REQUEST
+        PerformHttpRequest('https://api.v8.unrealspeech.com/synthesisTasks', function(ttsCode, ttsData)
 
-    Entity(NetworkGetEntityFromNetworkId(pedId)).state:set('isThinking', false, true)
-    Entity(NetworkGetEntityFromNetworkId(pedId)).state:set('isSpeaking', true, true)
+            local entity = NetworkGetEntityFromNetworkId(pedNetId)
+            if not entity or entity == 0 then return end
 
-  local duration = math.max(4000, math.min(15000, string.len(response) * 55))
+            if ttsCode ~= 200 or not ttsData then
+                Entity(entity).state:set('isThinking', false, true)
+                return
+            end
 
-Citizen.SetTimeout(duration, function()
-    local entity = NetworkGetEntityFromNetworkId(pedId)
-    if entity and entity ~= 0 then
-        Entity(entity).state:set('isSpeaking', false, true)
-        Entity(entity).state:set('lastSpeech', nil, true)
-    end
-end)
+            local ttsJson = json.decode(ttsData)
+            local ttsUrl = ttsJson?.SynthesisTask?.OutputUri
 
-  end, 'POST', json.encode({
-    model = Config.ChatGPTModel,
-    messages = conversations[playerId][pedId],
-  }), {
-    ['Content-Type'] = 'application/json',
-    ['Authorization'] = ('Bearer %s'):format(Config.APIKey),
-  })
+            if not ttsUrl then
+                Entity(entity).state:set('isThinking', false, true)
+                return
+            end
+
+            -- Estados sincronizados
+            Entity(entity).state:set('lastSpeech', response, true)
+            Entity(entity).state:set('isThinking', false, true)
+            Entity(entity).state:set('isSpeaking', true, true)
+
+            local coords = GetEntityCoords(entity)
+            local soundName = "ped_tts_" .. pedNetId
+
+            exports.xsound:PlayUrlPos(-1, soundName, ttsUrl, 0.5, coords, false)
+            exports.xsound:Distance(-1, soundName, Config.RangoVoz)
+            exports.xsound:setSoundDynamic(-1, soundName, true)
+            exports.xsound:destroyOnFinish(-1, soundName, true)
+
+            local duration = math.max(4000, math.min(15000, string.len(response) * 55))
+
+            SetTimeout(duration, function()
+                if DoesEntityExist(entity) then
+                    Entity(entity).state:set('isSpeaking', false, true)
+                    Entity(entity).state:set('lastSpeech', nil, true)
+                end
+            end)
+
+        end, 'POST', json.encode({
+            Text = response,
+            VoiceId = Config.Voices[humanPeds[pedModel].gender],
+            Bitrate = "192k",
+            Speed = "0",
+            Pitch = "1"
+        }), {
+            ['Content-Type'] = 'application/json',
+            ['Authorization'] = ('Bearer %s'):format(Config.TTSAPIKey),
+        })
+
+    end, 'POST', json.encode({
+        model = Config.ChatGPTModel,
+        messages = conversations[playerId][pedNetId],
+    }), {
+        ['Content-Type'] = 'application/json',
+        ['Authorization'] = ('Bearer %s'):format(Config.APIKey),
+    })
 end
+
 
 function setupConversation(playerId, pedId, pedModel)
     local pedData     = humanPeds[pedModel]
@@ -140,7 +125,7 @@ function setupConversation(playerId, pedId, pedModel)
 end
 
 
-RegisterNetEvent("ai_ped:talk", function(pedNetId, pedModel, message)
+RegisterNetEvent("rex_ia_npc:talk", function(pedNetId, pedModel, message)
     local src = source
 
     if not pedNetId or not pedModel or not message then
